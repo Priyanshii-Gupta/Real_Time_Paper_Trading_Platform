@@ -1,9 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Literal
 from datetime import datetime
-import random
 
 app = FastAPI(title="Crypto Trading Simulator Backend")
 
@@ -47,22 +46,15 @@ prices = {
     "SOL": 210.0
 }
 
-# In-memory trade history
 trades = []
 
 
-@app.get("/")
-def home():
-    return {"message": "Crypto Trading Simulator Backend", "status": "online"}
-
+# -------------------------
+# Endpoints
+# -------------------------
 
 @app.get("/prices")
 def get_prices():
-    # Subtle random price tick simulation for real-time market feel
-    for token in prices:
-        # +/- 0.15% random drift
-        change_pct = (random.random() - 0.5) * 0.003
-        prices[token] = round(prices[token] * (1 + change_pct), 2)
     return prices
 
 
@@ -95,7 +87,7 @@ def execute_trade(trade_req: TradeRequest):
             }
         user["balance"] = round(user["balance"] - total_cost, 2)
         user["holdings"][token] = round(user["holdings"].get(token, 0.0) + quantity, 6)
-    elif side == "SELL":
+    else:  # SELL
         current_holding = user["holdings"].get(token, 0.0)
         if current_holding < quantity:
             return {
@@ -103,10 +95,7 @@ def execute_trade(trade_req: TradeRequest):
             }
         user["holdings"][token] = round(current_holding - quantity, 6)
         user["balance"] = round(user["balance"] + total_cost, 2)
-    else:
-        return {"error": f"Invalid trade side: {side}. Must be BUY or SELL"}
 
-    # Record trade
     trade_record = {
         "id": len(trades) + 1,
         "timestamp": datetime.now().strftime("%H:%M:%S"),

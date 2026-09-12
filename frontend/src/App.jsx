@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import TradingControls from "./components/TradingControls";
 import PortfolioCard from "./components/PortfolioCard";
 import TradeHistory from "./components/TradeHistory";
