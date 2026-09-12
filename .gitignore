@@ -1,0 +1,28 @@
+# Python virtual environments
+venv/
+.venv/
+backend/venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Node / Frontend build artifacts
+node_modules/
+dist/
+dist-ssr/
+frontend/dist/
+frontend/node_modules/
+*.local
+npm-debug.log*
+yarn-debug.log*
+
+# IDE & OS files
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
