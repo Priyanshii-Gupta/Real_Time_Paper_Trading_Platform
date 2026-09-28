@@ -24,7 +24,7 @@ function fmt(val, decimals = 2) {
   return new BigNumber(val).toFixed(decimals);
 }
 
-export default function Dashboard({ user: initialUser, onLogout, toast }) {
+export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, toast }) {
   const [user, setUser] = useState(initialUser);
   const [symbol, setSymbol] = useState('BTC');
   const [quantity, setQuantity] = useState('');
@@ -52,7 +52,7 @@ export default function Dashboard({ user: initialUser, onLogout, toast }) {
 
     if (!tradePrice || tradePrice <= 0) {
       try {
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${selectedSymbol || 'BTCUSDT'}`);
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}USDT`);
         const data = await res.json();
         tradePrice = parseFloat(data.price);
         lastPriceRef.current = tradePrice; // Cache it for subsequent clicks
@@ -63,26 +63,33 @@ export default function Dashboard({ user: initialUser, onLogout, toast }) {
     }
     setLoading(true);
     try {
+      const priceStr = new BigNumber(tradePrice).toFixed(2);
       const { data } = await executeTrade({
         user_id: identity.user_id,
         symbol,
         side,
         quantity: qty,
-        current_price: String(lastPriceRef.current),
+        current_price: priceStr,
       });
 
-      setUser((prev) => ({
-        ...prev,
+      const updatedUser = {
+        ...user,
         portfolio: {
-          ...prev.portfolio,
+          ...user.portfolio,
           usd_balance: data.usd_balance,
           holdings: data.holdings,
           stats: data.stats,
         },
-      }));
+        order_history: [...(user.order_history || []), data.order],
+      };
+
+      setUser(updatedUser);
+      if (onUserUpdate) {
+        onUserUpdate(updatedUser);
+      }
 
       toast.success(
-        `${side} ${qty} ${symbol} @ $${fmt(lastPriceRef.current)} — order filled!`
+        `${side} ${qty} ${symbol} @ $${priceStr} — order filled!`
       );
       setQuantity('');
     } catch (err) {

@@ -66,6 +66,17 @@ def get_next_user_id(data: dict) -> int:
     return max(int(k) for k in data.keys()) + 1
 
 
+def register_user(name: str) -> dict:
+    """Thread-safe atomic creation of a new user entry."""
+    with _lock:
+        data = _load_raw()
+        user_id = get_next_user_id(data)
+        entry = create_user_entry(name=name, user_id=user_id)
+        data[str(user_id)] = entry
+        _save_raw(data)
+        return entry
+
+
 def create_user_entry(name: str, user_id: int) -> dict:
     """Build a fresh user record with default portfolio values."""
     return {

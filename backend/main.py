@@ -15,20 +15,23 @@ from security import (
     save_data,
     get_next_user_id,
     create_user_entry,
+    register_user,
     execute_trade,
 )
 
 app = FastAPI(title="Paper Trading Platform API", version="1.0.0")
 
 # ---------------------------------------------------------------------------
-# CORS – allow React dev servers on :3000 and :5173
+# CORS – allow React dev servers on :3000, :5173, and :5174
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:5173",
         "http://localhost:5174",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
     ],
     allow_credentials=True,
@@ -54,12 +57,7 @@ def get_user(user_id: int):
 @app.post("/api/user/create", response_model=UserOut, status_code=201, tags=["users"])
 def create_user(body: UserCreate):
     """Auto-generate a user_id ≥ 1001, create the user, persist, and return the profile."""
-    data    = load_data()
-    user_id = get_next_user_id(data)
-    entry   = create_user_entry(name=body.name.strip(), user_id=user_id)
-    data[str(user_id)] = entry
-    save_data(data)
-    return entry
+    return register_user(name=body.name.strip())
 
 
 # ---------------------------------------------------------------------------
