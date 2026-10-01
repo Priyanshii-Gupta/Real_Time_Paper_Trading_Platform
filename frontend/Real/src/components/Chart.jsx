@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
 
-// Map dropdown values to TradingView symbols
 const SYMBOL_MAP = {
   BTC: 'BINANCE:BTCUSDT',
   ETH: 'BINANCE:ETHUSDT',
@@ -11,7 +10,6 @@ function TradingViewWidget({ symbol }) {
   const container = useRef(null);
 
   useEffect(() => {
-    // Clear out the previous widget before mounting a new one
     container.current.innerHTML = '';
 
     const widgetDiv = document.createElement('div');
@@ -49,39 +47,58 @@ function TradingViewWidget({ symbol }) {
       studies: [],
       autosize: true,
     });
-    return () => {
-      if (container.current) container.current.innerHTML = '';
-    };
+
+    container.current.appendChild(script);
   }, [symbol]);
-
-
 
   return (
     <div
       className="tradingview-widget-container"
       ref={container}
       style={{ height: '100%', width: '100%' }}
-    >
-      <div className="tradingview-widget-copyright">
-        <a
-          href="https://www.tradingview.com/symbols/BTCUSD/?exchange=BINANCE"
-          rel="noopener nofollow"
-          target="_blank"
-        >
-          <span className="blue-text">Crypto price</span>
-        </a>
-        <span className="trademark"> by TradingView</span>
-      </div>
-    </div>
+    />
   );
 }
 
 const MemoTradingViewWidget = memo(TradingViewWidget);
 
-export default function CryptoChart({ symbol }) {
+export default function CryptoChart({ onPriceUpdate }) {
+  const [coin, setCoin] = useState('BTC');
+
+  // Poll price separately since the embed widget doesn't expose prices
+  useEffect(() => {
+    const fetchPrice = async () => {
+      try {
+        const pair = `${coin}USDT`;
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`);
+        const data = await res.json();
+        if (data.price && onPriceUpdate) {
+          onPriceUpdate(parseFloat(data.price));
+        }
+      } catch (err) {
+        console.error("Error fetching price tick:", err);
+      }
+    };
+
+    fetchPrice(); // Initial fetch
+    const interval = setInterval(fetchPrice, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [coin, onPriceUpdate]);
+
   return (
     <div style={{ height: '600px', width: '100%' }}>
-      <MemoTradingViewWidget symbol={SYMBOL_MAP[symbol]} />
+      <select
+        value={coin}
+        onChange={(e) => setCoin(e.target.value)}
+        style={{ marginBottom: '8px' }}
+      >
+        <option value="BTC">BTC</option>
+        <option value="ETH">ETH</option>
+        <option value="SOL">SOL</option>
+      </select>
+
+      <MemoTradingViewWidget symbol={SYMBOL_MAP[coin]} />
     </div>
   );
 }
