@@ -6,7 +6,7 @@
  *   onLogout — callback to clear session
  *   toast   — { success, error, info } from useToast
  */
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import BigNumber from 'bignumber.js';
 import Chart from './Chart.jsx';
 import { executeTrade } from '../api.js';
@@ -41,6 +41,25 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
     setLivePrice(price);
   }, []);
 
+  // Resilient live price stream (Coinbase WS & REST polling) inside Dashboard
+  useEffect(() => {
+    const pair = `${symbol}-USD`;
+    let isSubscribed = true;
+
+    const fetchPrice = async () => {
+      try {
+        const res = await fetch(`https://api.coinbase.com/v2/prices/${pair}/spot`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isSubscribed && data?.data?.amount) handlePrice(parseFloat(data.data.amount));
+      } catch (e) { }
+    };
+
+    fetchPrice();
+    const interval = setInterval(fetchPrice, 10000); // fallback only
+    return () => { isSubscribed = false; clearInterval(interval); };
+  }, [symbol, handlePrice]);
+
   const handleTrade = async (side) => {
     const qty = quantity.trim();
     if (!qty || isNaN(qty) || parseFloat(qty) <= 0) {
@@ -52,13 +71,20 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
 
     if (!tradePrice || tradePrice <= 0) {
       try {
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}USDT`);
+        const res = await fetch(`https://api.coinbase.com/v2/prices/${symbol}-USD/spot`);
         const data = await res.json();
-        tradePrice = parseFloat(data.price);
-        lastPriceRef.current = tradePrice; // Cache it for subsequent clicks
+        tradePrice = parseFloat(data.data.amount);
+        lastPriceRef.current = tradePrice;
       } catch (err) {
-        toast.error('Unable to fetch market price. Check network connection.');
-        return;
+        try {
+          const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}USDT`);
+          const data = await res.json();
+          tradePrice = parseFloat(data.price);
+          lastPriceRef.current = tradePrice;
+        } catch (e) {
+          toast.error('Unable to fetch market price. Check network connection.');
+          return;
+        }
       }
     }
     setLoading(true);
@@ -106,13 +132,9 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
       {/* ── HEADER ──────────────────────────────────────────────── */}
       <header className="dash-header">
         <div className="container flex items-center justify-between" style={{ height: '100%' }}>
-          {/* Brand */}
-          <div className="flex items-center gap-3">
-            <span style={{ fontSize: 26 }}>📈</span>
-            <span className="brand-text">PaperTrade</span>
-          </div>
 
-          {/* Right: profile + logout */}
+
+          {/* Right: profile */}
           <div className="flex items-center gap-4">
             <div className="profile-chip" aria-label="User profile">
               <div className="avatar">{identity.name.charAt(0).toUpperCase()}</div>
@@ -121,13 +143,6 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
                 <div className="profile-uid">ID #{identity.user_id}</div>
               </div>
             </div>
-            <button
-              id="logout-btn"
-              className="btn btn-ghost btn-sm"
-              onClick={onLogout}
-            >
-              Logout
-            </button>
           </div>
         </div>
       </header>
@@ -139,7 +154,7 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
         <div className="stats-bar">
           {/* USD Balance */}
           <div className="stat-card">
-            <span className="stat-label">💵 USD Balance</span>
+            <span className="stat-label">USD Balance</span>
             <span className="stat-value mono text-green">
               ${fmt(usdBN.toString(), 2)}
             </span>
@@ -147,7 +162,6 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
 
           {/* Reputation */}
           <div className="stat-card stat-card--gold">
-            <span className="stat-label">🏆 Profitable Trades</span>
             <span className="stat-value text-gold">
               {stats.total_profitable_trades}
             </span>
@@ -158,7 +172,6 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
 
           {/* Live price */}
           <div className="stat-card">
-            <span className="stat-label">⚡ Live {symbol} Price</span>
             <span className="stat-value mono text-accent">
               {livePrice ? `$${new BigNumber(livePrice).toFormat(2)}` : '—'}
             </span>
@@ -198,9 +211,6 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
                 <h2 style={{ fontSize: 18, fontWeight: 700 }}>
                   {COIN_META[symbol].label} / USDT
                 </h2>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Live 1-minute candlestick · Binance WebSocket
-                </p>
               </div>
               {/* Symbol switcher tabs */}
               <div className="symbol-tabs">
@@ -315,7 +325,6 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
             {/* Reputation breakdown */}
             <div className="rep-section mt-4">
               <div className="rep-header">
-                <span>🏆 Reputation</span>
                 <span className="badge badge-gold">{stats.total_profitable_trades} wins</span>
               </div>
               {SYMBOLS.map((s) => (
@@ -343,7 +352,7 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
 
         {/* ── ROW 3: Order History ─────────────────────────────── */}
         <div className="card history-card">
-          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>📋 Order History</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}> Order History</h2>
           {user.order_history.length === 0 ? (
             <p className="text-muted" style={{ fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
               No orders yet. Place your first trade above!
@@ -388,238 +397,167 @@ export default function Dashboard({ user: initialUser, onLogout, onUserUpdate, t
       </main>
 
       <style>{`
-        /* Header */
-        .dash-header {
-          height: 64px;
-          background: rgba(17, 22, 32, 0.85);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border-bottom: 1px solid var(--border);
-          position: sticky;
-          top: 0;
-          z-index: 100;
-        }
-        .brand-text {
-          font-size: 20px;
-          font-weight: 800;
-          background: linear-gradient(135deg, #60a5fa, #34d399);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-        .profile-chip {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 6px 14px 6px 6px;
-          border-radius: 999px;
-          background: var(--bg-elevated);
-          border: 1px solid var(--border);
-        }
-        .avatar {
-          width: 32px; height: 32px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, var(--accent), #8b5cf6);
-          display: flex; align-items: center; justify-content: center;
-          font-weight: 700; font-size: 14px;
-          color: #fff;
-          flex-shrink: 0;
-        }
-        .profile-name { font-size: 13px; font-weight: 600; line-height: 1; }
-        .profile-uid  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+       /* Header */
+.dash-header {
+  height: 56px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.profile-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+.avatar {
+  width: 30px; height: 30px;
+  background: var(--bg-surface);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+.profile-name { font-size: 13px; font-weight: 600; line-height: 1; }
+.profile-uid  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
-        /* Body */
-        .dash-body {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-          padding-top: 24px;
-          padding-bottom: 40px;
-        }
+/* Body */
+.dash-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 20px;
+  padding-bottom: 40px;
+}
 
-        /* Stats bar */
-        .stats-bar {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-          gap: 14px;
-        }
-        .stat-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: var(--radius-md);
-          padding: 16px 18px;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          cursor: pointer;
-          transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
-          position: relative;
-          overflow: hidden;
-        }
-        .stat-card::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(135deg, transparent 60%, rgba(255,255,255,0.02));
-          pointer-events: none;
-        }
-        .stat-card:hover {
-          border-color: rgba(255,255,255,0.14);
-          transform: translateY(-2px);
-        }
-        .stat-card.active {
-          border-color: var(--accent);
-          box-shadow: 0 0 0 1px var(--accent), 0 4px 20px var(--accent-glow);
-        }
-        .stat-card--gold { border-top: 2px solid var(--gold); }
-        .stat-card--coin { }
-        .stat-label {
-          font-size: 11px;
-          font-weight: 600;
-          letter-spacing: 0.05em;
-          text-transform: uppercase;
-          color: var(--text-muted);
-        }
-        .stat-value {
-          font-size: 22px;
-          font-weight: 800;
-          line-height: 1.1;
-        }
+/* Stats bar */
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-card--coin { cursor: pointer; }
+.stat-card--coin:hover { border-color: #3a4152; }
+.stat-card.active { border-color: var(--accent); }
+.stat-card--gold { border-top: 2px solid var(--gold); }
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.stat-value { font-size: 20px; font-weight: 700; line-height: 1.1; }
 
-        /* Main grid */
-        .main-grid {
-          display: grid;
-          grid-template-columns: 1fr 340px;
-          gap: 20px;
-          align-items: start;
-        }
-        @media (max-width: 900px) {
-          .main-grid { grid-template-columns: 1fr; }
-        }
+/* Main grid */
+.main-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
 
-        /* Chart card */
-        .chart-card { padding: 20px; }
+.chart-card { padding: 20px; }
 
-        /* Symbol tabs */
-        .symbol-tabs {
-          display: flex;
-          gap: 4px;
-          background: var(--bg-elevated);
-          padding: 4px;
-          border-radius: var(--radius-sm);
-        }
-        .symbol-tab {
-          background: none;
-          border: none;
-          color: var(--text-secondary);
-          font-family: var(--font-sans);
-          font-size: 12px;
-          font-weight: 600;
-          padding: 5px 12px;
-          border-radius: 4px;
-          cursor: pointer;
-          transition: all 0.15s;
-        }
-        .symbol-tab.active {
-          background: var(--bg-card);
-          color: var(--tab-color, var(--accent));
-          box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-        }
-        .symbol-tab:hover:not(.active) { color: var(--text-primary); }
+/* Symbol tabs */
+.symbol-tabs { display: flex; border: 1px solid var(--border); }
+.symbol-tab {
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.symbol-tab:last-child { border-right: none; }
+.symbol-tab.active { background: var(--bg-elevated); color: var(--tab-color, var(--accent)); }
+.symbol-tab:hover:not(.active) { color: var(--text-primary); }
 
-        /* Trade card */
-        .trade-card { padding: 24px; }
-        .form-group { display: flex; flex-direction: column; }
-        .cost-estimate {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 10px 14px;
-          background: var(--bg-elevated);
-          border-radius: var(--radius-sm);
-          font-size: 13px;
-          color: var(--text-secondary);
-        }
-        .cost-estimate .mono { color: var(--text-primary); font-weight: 600; }
+/* Trade card */
+.trade-card { padding: 20px; }
+.form-group { display: flex; flex-direction: column; }
+.cost-estimate {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.cost-estimate .mono { color: var(--text-primary); font-weight: 600; }
 
-        /* Balance */
-        .balance-summary { display: flex; flex-direction: column; gap: 4px; }
-        .bal-row { display: flex; justify-content: space-between; align-items: center; }
+/* Balance */
+.balance-summary { display: flex; flex-direction: column; gap: 4px; }
+.bal-row { display: flex; justify-content: space-between; align-items: center; }
 
-        /* Reputation */
-        .rep-section {
-          background: var(--bg-elevated);
-          border-radius: var(--radius-md);
-          padding: 14px;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-        .rep-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          font-size: 13px;
-          font-weight: 600;
-        }
-        .rep-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .rep-bar-wrap {
-          flex: 1;
-          height: 6px;
-          background: rgba(255,255,255,0.07);
-          border-radius: 3px;
-          overflow: hidden;
-        }
-        .rep-bar {
-          height: 100%;
-          width: var(--pct, 0%);
-          background: var(--col, var(--accent));
-          border-radius: 3px;
-          transition: width 0.5s ease;
-        }
+/* Reputation */
+.rep-section {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rep-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+.rep-row { display: flex; align-items: center; gap: 8px; }
+.rep-bar-wrap { flex: 1; height: 4px; background: rgba(255,255,255,0.07); }
+.rep-bar { height: 100%; width: var(--pct, 0%); background: var(--col, var(--accent)); }
 
-        /* Order history */
-        .history-card { padding: 24px; }
-        .history-table-wrap {
-          overflow-x: auto;
-          border-radius: var(--radius-sm);
-        }
-        .history-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 13px;
-        }
-        .history-table th {
-          text-align: left;
-          padding: 8px 14px;
-          font-size: 11px;
-          font-weight: 600;
-          letter-spacing: 0.05em;
-          text-transform: uppercase;
-          color: var(--text-muted);
-          border-bottom: 1px solid var(--border);
-        }
-        .history-table td {
-          padding: 10px 14px;
-          border-bottom: 1px solid rgba(255,255,255,0.04);
-          vertical-align: middle;
-        }
-        .history-table tr:hover td { background: rgba(255,255,255,0.02); }
-        .badge-sell {
-          background: rgba(239,68,68,0.15);
-          color: var(--red);
-          border: 1px solid rgba(239,68,68,0.3);
-          display: inline-flex;
-          align-items: center;
-          padding: 3px 10px;
-          border-radius: 999px;
-          font-size: 12px;
-          font-weight: 600;
-        }
+/* Order history */
+.history-card { padding: 20px; }
+.history-table-wrap { overflow-x: auto; }
+.history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.history-table th {
+  text-align: left;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.history-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.history-table tr:hover td { background: rgba(255,255,255,0.02); }
+.badge-sell {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
       `}</style>
     </div>
   );

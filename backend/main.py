@@ -59,11 +59,6 @@ def create_user(body: UserCreate):
     """Auto-generate a user_id ≥ 1001, create the user, persist, and return the profile."""
     return register_user(name=body.name.strip())
 
-
-# ---------------------------------------------------------------------------
-# Trade endpoint
-# ---------------------------------------------------------------------------
-
 @app.post("/api/trade", response_model=TradeResponse, tags=["trading"])
 def trade(body: TradeRequest):
     """Execute a BUY or SELL order and return the updated account state."""
@@ -100,3 +95,4 @@ def trade(body: TradeRequest):
 @app.get("/api/health", tags=["system"])
 def health():
     return {"status": "ok"}
+    
